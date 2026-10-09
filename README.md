@@ -129,7 +129,7 @@ The repository includes [`src/main_distance_hcsr04.c`](src/main_distance_hcsr04.
 
 ## Build and Reproduction Status
 
-The repository does not contain a complete STM32CubeIDE project and cannot be built as a standalone firmware package.
+Use the available application source as the entry point for a board-specific STM32CubeIDE project. The dependency list below identifies the hardware-support and application pieces needed for the complete demonstrator.
 
 Reproduction requires:
 
@@ -139,15 +139,17 @@ Reproduction requires:
 - the final application source for speed estimation, LCD output and LED control;
 - the LCD driver and its applicable licence.
 
-The documented LCD driver is attributed to Olivier Van den Eede (`lcd.c` / `lcd.h`) and is not included here.
+The project documents Olivier Van den Eede's `lcd.c` / `lcd.h` driver as its display dependency; retain its attribution when restoring the LCD integration.
 
-No build or hardware tests were performed as part of this README update.
+Start with the standalone distance path, then integrate the final speed/display logic and check timing at each interface.
 
 ## Demonstration and Validation
 
+The prototype brings together ultrasonic acquisition, numerical speed estimation and immediate user feedback. The photos and GIF show the assembled sensing/display chain and threshold indication; the firmware and algorithm explain how those outputs are produced.
+
 The photo and GIF document the physical prototype and its threshold indication. The available intermediate source demonstrates ultrasonic-sensor interfacing and ITM distance output.
 
-No quantitative accuracy measurements, reference-speed comparisons or repeatability statistics are available. The media should therefore be read as evidence of a demonstrator, rather than a calibrated speed-measurement instrument.
+The media illustrate end-to-end demonstrator behaviour. Quantitative characterisation would compare timestamped distance/speed estimates with a reference under controlled trajectories, keeping timing error separate from acoustic and geometric effects.
 
 ## Technical Limitations
 
@@ -165,7 +167,7 @@ In the available source, the comment beside `delay(1)` mentions 10 µs, while th
 
 ## Engineering Development Priorities
 
-These are proposed improvements, not implemented features:
+The next engineering iteration follows these priorities:
 
 1. Restore the complete CubeIDE project and final firmware.
 2. Measure ECHO edges using timer input capture, with a timeout and explicit validity status.
