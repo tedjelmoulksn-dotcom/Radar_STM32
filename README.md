@@ -1,105 +1,186 @@
-# Radar de route sur STM32
+# STM32 Ultrasonic Speed Measurement Prototype
 
-Maquette de radar routier : un capteur à ultrasons HC-SR04 mesure deux fois la distance d'un objet à 200 ms d'intervalle, une carte STM32 en déduit une vitesse, l'affiche sur un LCD et fait clignoter une LED si le seuil est dépassé.
+An embedded instrumentation project using an STM32 microcontroller and an HC-SR04 ultrasonic sensor to estimate an object's speed from successive distance measurements. The completed demonstrator displays the estimate on a character LCD and triggers an LED flash when a demonstration threshold is exceeded.
 
-![Prototype : boîtier imprimé portant l'afficheur LCD et le capteur à ultrasons](assets/prototype_radar.jpg)
-![Démonstration du radar : flash de la LED au dépassement du seuil](assets/demo_radar.gif)
+**Embedded C · STM32L4 · STM32 HAL · Timers · GPIO · Ultrasonic Sensing · ITM Debugging**
 
-*Démonstration : la LED flashe lorsque la vitesse mesurée dépasse 7 km/h.*
-*Prototype : boîtier avec l'afficheur LCD sur le dessus et le capteur HC-SR04 en façade.*
+![Prototype enclosure with LCD and ultrasonic sensor](assets/prototype_radar.jpg)
 
-## Sommaire
+*Prototype enclosure with a character LCD on top and the HC-SR04 sensor on the front.*
 
-1. [Présentation](#présentation)
-2. [Matériel et outils](#matériel-et-outils)
-3. [Principe de mesure](#principe-de-mesure)
-4. [Algorithme](#algorithme)
-5. [Détail du code](#détail-du-code)
-6. [Contenu du dépôt](#contenu-du-dépôt)
-7. [Limites](#limites)
+![Speed threshold demonstration with LED flash](assets/demo_radar.gif)
 
-## Présentation
+*Demonstration of the LED flash associated with the 7 km/h threshold.*
 
-- **Cadre** : projet « Microcontrôleur 2 », deuxième année du cycle ingénieur Instrumentation, Sup Galilée (Université Sorbonne Paris Nord).
-- **Équipe** : projet réalisé en binôme avec Greg Alberts.
-- **État** : projet académique terminé, non maintenu.
+## Project Overview
 
-## Matériel et outils
+The project combines sensor interfacing, timing, distance-to-speed conversion and user feedback in a physical prototype.
 
-| Élément | Détail |
+| Item | Details |
 |---|---|
-| Carte | STM32L475 (microcontrôleur STM32L475VGTx) |
-| Capteur | Ultrasons HC-SR04 : TRIG sur PC3, ECHO sur PC4 |
-| Affichage | LCD 2 × 16 en mode 4 bits |
-| Signalisation | LED blanche (flash) |
-| Outils | STM32CubeIDE, configuration CubeMX, bibliothèque HAL STM32L4 |
-| Horloge | 80 MHz (MSI + PLL), timer TIM1 avec prédiviseur 79, soit 1 tick par microseconde |
+| Context | Second-year engineering project, Instrumentation, Sup Galilée, Université Sorbonne Paris Nord |
+| Course | Microcontroller 2 |
+| Team | Tedj El Moulk Sinacer and Greg Alberts |
+| Status | Completed academic prototype; not actively maintained |
+| Repository scope | Intermediate distance-measurement source, final-program screenshots, prototype media and project documentation |
 
-## Principe de mesure
+The name “radar” refers to the original project theme. The measurement principle is ultrasonic time of flight, rather than radio-frequency radar.
 
-1. Une impulsion de 10 µs est envoyée sur TRIG.
-2. La durée de l'état haut sur ECHO est mesurée en microsecondes.
-3. La distance vaut `durée × 0,034 / 2` en centimètres (vitesse du son 340 m/s, aller-retour).
-4. Deux distances mesurées à `DELTA_T = 200 ms` d'intervalle donnent une vitesse, convertie en km/h.
+## Hardware and Tools
 
-Une mesure n'est retenue que si les deux distances sont comprises entre 20 et 150 cm et si l'objet s'éloigne ; sinon la vitesse est mise à zéro. Une vitesse inférieure à 1 km/h est considérée comme nulle.
+| Component | Details |
+|---|---|
+| Microcontroller | STM32L475VGTx |
+| Distance sensor | HC-SR04 ultrasonic sensor |
+| Sensor connections | TRIG: PC3; ECHO: PC4 |
+| Display | 16 × 2 character LCD, 4-bit interface |
+| Indicator | White LED used as a flash |
+| Development tools | STM32CubeIDE and STM32CubeMX |
+| Firmware interfaces | STM32L4 HAL |
+| Clock configuration | 80 MHz system clock using MSI and PLL |
+| Timer | TIM1, prescaler 79, giving a nominal 1 MHz counter clock |
+| Debug output | ITM, with `printf` redirected through `_write()` |
 
-## Algorithme
+[CubeMX pin configuration](assets/brochage_cubemx.png)
 
-![Étapes de l'algorithme du radar](assets/algorithme_radar.png)
+## Measurement Principle
 
-```mermaid
-flowchart TD
-    A[Mesure de distance 1] --> B[Attente DELTA_T = 200 ms]
-    B --> C[Mesure de distance 2]
-    C --> D[Calcul de la vitesse en km/h]
-    D --> E[Affichage sur le LCD toutes les 500 ms]
-    E --> F{7 km/h < vitesse < 20 km/h ?}
-    F -- oui --> G[Flash de la LED et message d'excès de vitesse]
-    F -- non --> A
-    G --> A
+### Distance
+
+A 10 µs pulse on TRIG starts an ultrasonic measurement. The duration of the ECHO pulse represents the sound's round trip to the object.
+
+Using a sound-speed assumption of 340 m/s:
+
+```text
+distance_cm = echo_duration_us × 0.034 / 2
 ```
 
-| Constante | Valeur | Rôle |
+This equation requires an accurate measurement of the echo duration. The available source uses a polling-loop approximation, described under limitations below.
+
+### Speed
+
+The documented final demonstrator estimates speed from two distance measurements separated by a nominal 200 ms interval:
+
+```text
+speed_kmh = ((distance_2_cm - distance_1_cm) / 100) / delta_t_s × 3.6
+```
+
+The measurement represents motion along the sensor's line of sight.
+
+The documented acceptance rules are:
+
+- both distances must be between 20 and 150 cm;
+- the object must be moving away from the sensor;
+- estimates below 1 km/h are treated as zero;
+- the flash condition is strictly above 7 km/h and below 20 km/h.
+
+| Parameter | Value | Purpose |
 |---|---|---|
-| `DELTA_T` | 200 ms | Intervalle entre les deux mesures |
-| `MAX_SPEED` | 7 km/h | Seuil de déclenchement du flash |
-| `ERROR_SPEED` | 20 km/h | Au-delà, la mesure est considérée comme aberrante |
+| `DELTA_T` | 200 ms | Nominal interval between distance measurements |
+| `MAX_SPEED` | 7 km/h | Demonstration flash threshold |
+| `ERROR_SPEED` | 20 km/h | Upper rejection threshold |
 
-## Détail du code
+These thresholds are intended for a small-scale demonstrator. No road-vehicle measurement capability or calibrated accuracy is claimed.
 
-| Fonction | Rôle |
+## Documented Demonstrator Workflow
+
+1. Measure the first distance.
+2. Wait for the nominal measurement interval.
+3. Measure the second distance and evaluate validity.
+4. Calculate the speed estimate.
+5. Update the LCD.
+6. Trigger the LED flash when the threshold condition is met.
+
+![Documented speed measurement algorithm](assets/algorithme_radar.png)
+
+*Original project algorithm diagram, retained in French.*
+
+## Available Source Code
+
+The repository includes [`src/main_distance_hcsr04.c`](src/main_distance_hcsr04.c), an intermediate firmware version that measures distance and prints it through ITM, with a 500 ms delay between readings.
+
+| Function | Implementation in the available source |
 |---|---|
-| `delay(us)` | Attente en microsecondes par lecture du compteur de TIM1 |
-| `hcsr04_read()` | Déclenche le capteur et renvoie la durée de l'écho |
-| `calcul_speed()` | Effectue les deux mesures et calcule la vitesse |
-| `flash_car()` | Fait clignoter la LED |
+| `SystemClock_Config()` | Configures MSI and PLL for the system clock |
+| `MX_GPIO_Init()` | Configures PC3 as TRIG output and PC4 as ECHO input |
+| `MX_TIM1_Init()` | Configures TIM1 with a nominal 1 µs counter tick |
+| `delay()` | Resets TIM1 and waits for a requested counter value |
+| `hcsr04_read()` | Generates TRIG and estimates ECHO duration through polling |
+| `_write()` | Redirects character output to ITM |
 
-Extraits du programme final (captures issues du rapport) :
+**The final speed calculation, LCD output and flash functions are preserved as screenshots, not as compilable source files.**
 
-![Lecture du capteur HC-SR04](assets/code_lecture_hcsr04.png)
-![Calcul de la vitesse](assets/code_calcul_vitesse.png)
-![Boucle principale](assets/code_boucle_principale.png)
+### Final-Program Screenshots
 
-Brochage configuré dans CubeMX : [`assets/brochage_cubemx.png`](assets/brochage_cubemx.png).
+![HC-SR04 reading in the documented final program](assets/code_lecture_hcsr04.png)
 
-## Contenu du dépôt
+![Speed calculation in the documented final program](assets/code_calcul_vitesse.png)
 
-```
-src/main_distance_hcsr04.c   Étape intermédiaire : mesure et affichage de la distance seule
-assets/                      Photo du prototype, algorithme, captures du programme final
-```
+![Main loop in the documented final program](assets/code_boucle_principale.png)
 
-Le fichier `src/main_distance_hcsr04.c` est le `main.c` généré par CubeMX, complété par `delay()` et `hcsr04_read()`. Il envoie la distance sur la sortie de débogage (ITM) toutes les 500 ms.
+## Repository Structure
 
-## Limites
+| Path | Contents |
+|---|---|
+| `src/main_distance_hcsr04.c` | Intermediate distance-measurement firmware |
+| `assets/` | Prototype photo, demonstration GIF, algorithm, pin configuration and code screenshots |
+| `documentation/rapport_radar_stm32.pdf` | Project report |
+| `documentation/presentation_radar.pdf` | Project presentation |
 
-- **Programme final non conservé en source** : le calcul de vitesse, l'affichage LCD et le flash n'existent ici que sous forme de captures. Le projet CubeIDE complet (fichier `.ioc`, pilotes HAL, `main.h`) n'est pas dans le dépôt, qui ne se compile donc pas tel quel.
-- **Afficheur LCD** : le pilote utilisé est une bibliothèque tierce (`lcd.c` / `lcd.h`, Olivier Van den Eede) ; elle n'est pas redistribuée ici.
-- **Précision** : aucune mesure de précision n'a été faite. La vitesse repose sur deux distances proches dans le temps, donc sensible au bruit du capteur ; la plage utile est limitée à 20–150 cm.
-- **Seuils** : 7 km/h est un seuil de démonstration adapté à une maquette, pas à un véhicule réel.
-- **Mesure bloquante** : l'attente de l'écho n'a pas de délai de garde ; sans écho, le programme reste bloqué.
+## Build and Reproduction Status
 
-## Licence
+The repository does not contain a complete STM32CubeIDE project and cannot be built as a standalone firmware package.
 
-Aucune licence n'a été définie pour ce code. L'en-tête du fichier généré par CubeMX reste soumis aux conditions de STMicroelectronics.
+Reproduction requires:
+
+- the board configuration and CubeMX `.ioc` file, or an equivalent recreated configuration;
+- `main.h`, HAL/CMSIS dependencies and peripheral support files;
+- startup code, linker script and build configuration;
+- the final application source for speed estimation, LCD output and LED control;
+- the LCD driver and its applicable licence.
+
+The documented LCD driver is attributed to Olivier Van den Eede (`lcd.c` / `lcd.h`) and is not included here.
+
+No build or hardware tests were performed as part of this README update.
+
+## Demonstration and Validation
+
+The photo and GIF document the physical prototype and its threshold indication. The available intermediate source demonstrates ultrasonic-sensor interfacing and ITM distance output.
+
+No quantitative accuracy measurements, reference-speed comparisons or repeatability statistics are available. The media should therefore be read as evidence of a demonstrator, rather than a calibrated speed-measurement instrument.
+
+## Technical Limitations
+
+| Limitation | Consequence |
+|---|---|
+| Echo duration estimated by counting polling-loop iterations containing `delay(1)` | GPIO reads and loop overhead add time; one iteration is not exactly 1 µs |
+| No timeout while waiting for ECHO transitions | Missing or stuck ECHO can block the application |
+| Distance stored as `uint32_t` | Fractional centimetres are truncated |
+| Speed derived from two distance measurements | Distance noise propagates into the speed estimate |
+| Fixed sound-speed assumption | Environmental effects are not compensated |
+| Nominal inter-measurement delay | Actual timing should be measured when evaluating speed accuracy |
+| Final source and build dependencies missing | The complete demonstrator is not reproducible from this repository alone |
+
+In the available source, the comment beside `delay(1)` mentions 10 µs, while the argument requests 1 µs. The implementation and documentation need to be kept consistent.
+
+## Engineering Development Priorities
+
+These are proposed improvements, not implemented features:
+
+1. Restore the complete CubeIDE project and final firmware.
+2. Measure ECHO edges using timer input capture, with a timeout and explicit validity status.
+3. Timestamp measurements and use the actual elapsed interval for speed estimation.
+4. Preserve fractional distance values and assess filtering based on measured noise.
+5. Compare distance and speed estimates against references, documenting error and repeatability.
+6. Separate the sensor driver, speed estimation and display logic into modules.
+
+## Documentation
+
+- [Project report — PDF, French](documentation/rapport_radar_stm32.pdf)
+- [Project presentation — PDF, French](documentation/presentation_radar.pdf)
+
+## Authors and Licensing
+
+Project developed by **Tedj El Moulk Sinacer** and **Greg Alberts**.
+
+No project-wide licence has been specified. The STM32CubeMX-generated source retains its STMicroelectronics copyright and licence notice.
