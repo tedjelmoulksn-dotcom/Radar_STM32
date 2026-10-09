@@ -1,6 +1,6 @@
 # STM32 Ultrasonic Speed Measurement Prototype
 
-An embedded instrumentation project using an STM32 microcontroller and an HC-SR04 ultrasonic sensor to estimate an object's speed from successive distance measurements. The completed demonstrator displays the estimate on a character LCD and triggers an LED flash when a demonstration threshold is exceeded.
+STM32 ultrasonic demonstrator estimating speed from successive distance measurements.
 
 **Embedded C · STM32L4 · STM32 HAL · Timers · GPIO · Ultrasonic Sensing · ITM Debugging**
 
